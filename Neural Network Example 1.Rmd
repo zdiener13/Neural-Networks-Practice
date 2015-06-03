@@ -5,7 +5,7 @@ date: "June 1, 2015"
 output: html_document
 ---
 
-I will be construction a function to model the network shown in the slides(pg 60). 
+I will be constructing a function to model the network shown in the slides(pg 60). 
 
 #Define Inputs
 ```{r}
@@ -47,4 +47,4 @@ y_2=c(2.36,2.20,1.84,1.36)
  abline(-3,3)
  abline(2,.3333)
 ``` 
-This will allow for the data to be plotted as three seperate groupings. Then they may be seperated by color. From here I plotted three lines to seperate the groups of data. This is not apperent in my graph however due to the random generation of my data (see a,b,c=rnorm(5)).
+This will allow for the data to be plotted as three seperate groupings. Then they may be seperated by color. From here I plotted three lines to seperate the groups of data. 
