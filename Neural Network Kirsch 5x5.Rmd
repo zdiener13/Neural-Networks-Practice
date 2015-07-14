@@ -1,0 +1,143 @@
+---
+title: "Neural Network Kirsh 5x5"
+author: "Zach Diener"
+date: "July 14, 2015"
+output: html_document
+---
+```{r}
+library(wavethresh) 
+library(gplots)
+library(wavelets)
+library(nnet)
+
+
+#Generate Simulation data
+set.seed(5)
+
+rm(list=ls())	#Clear data
+
+sds<-sample(rep(c(0,0.2,0.4,0.6,0.8,1.0,1.2,1.4,1.6,1.8,2.0),30))	#Generate random list of standard deviations
+TestCases<-data.frame(matrix(NA,nrow=330,ncol=70))	#Create empty data frame to store simulated signals
+NoiseSeeds<-data.frame(matrix(NA,nrow=330,ncol=626))	#Create empty data frame to store state of RNG before each injection of noise
+SD_Change<-data.frame(matrix(NA,nrow=330,ncol=2))	#Create empty data frame to store standard deviations and transition points
+colnames(SD_Change)<-c("sd","change")	#Name columns 
+x<-(1:70)	#Create vector of values from 1 to 70
+for(i in 1:330){	#Loop over all standard deviations
+		change1<-sample(25:55,1)	#Randomly select transition point between 25 and 55
+		NoiseSeeds[i,]<-.Random.seed	#Store state of RNG
+		TestCases[i,(1:70)]<-(((x>=1 & x<(change1-25))*0)+((x>=(change1-25) & x<(change1-10))*((0.02*x)+0.5-(0.02*change1)))+((x>=(change1-10) & x<(change1-6))*(x+10.3-change1))+((x>=(change1-6) & x<(change1))*(4.3))+((x>=(change1) & x<(change1+10))*((-0.5*x)+4.3+(0.5*change1)))+((x>=(change1+10) & x<=(change1+15))*((-0.25*x)+1.8+(0.25*change1)))+((x>(change1+15) & x<=1000)*(-1.95)))+rnorm(length(x),sd=sds[i])+20	#Inject noise into base signal and store
+	#	TestCases[i,71]<-paste(";",(i),sep="")	#Label signal for later identification
+		SD_Change[i,"change"]<-change1	#Store transition point
+}	#End loop
+SD_Change[,"sd"]<-sds	#Store standard deviation of injected noise
+write.csv(NoiseSeeds,row.names=FALSE,"./NoiseSeeds.csv")	#Save output
+write.csv(TestCases,row.names=FALSE,"./TestCases.csv")	#Save output
+write.csv(SD_Change,row.names=FALSE,"./SD_Change.csv")	#Save output
+df <- as.data.frame(read.csv("TestCases.csv", header=T)) # read in data frame
+
+
+Gradient5X5 <- matrix(c(0),330,70)
+
+for(z in 1:330){
+#input number of frequency bands
+j= c(1:6)
+
+#input the original signal 
+s <- as.vector(as.matrix((df[z,])))
+
+#Averages<-t(Averages)
+Averages = matrix(0,length(j),length(s))
+nrows <- nrow(Averages)
+rownames(Averages) <- 0: (nrow(Averages)-1)
+colnames(Averages) <- 1:ncol(Averages)
+Averages[1,] <- s
+
+
+#Calculate Averages
+for (j in 1:((nrows)-1)){
+  for (n in (2*j):length(s)){
+    #print(Averages[1, (n-(((2*j)-1)):n)])
+   Averages[(j+1),n] <- mean(Averages[1, (n-((2*j)-1)):n]) 
+    }
+}
+
+#Threshold Averages
+Arow_1 <- Averages[2,2:70]
+sigma <- (mad(Arow_1))/.6745
+#print(mad(Arow_1))
+Thresh<- sigma * (sqrt(2* log(length(Arow_1))))
+
+for (i in 1:4){
+  high <- Averages[i,] >= Thresh
+  mid <- Averages[i,] < Thresh
+  low <- Averages[i,] <= -Thresh
+  Averages[i,high] <- (Averages[i,high] <- (Averages[i,high]-Thresh))
+  Averages[i,mid] <- (Averages[i,mid] <- 0)
+  Averages[i,low] <- (Averages[i,low] <- (Averages[i,low]+Thresh))
+}
+
+
+#Calculate Differences
+Differences <- matrix(c(0),nrow(Averages)-1,ncol(Averages))
+
+for (j in 1:((nrows)-1)){
+  for (n in (2*(j)):length(s)){
+    Differences[(j),n] <- (-1)*((mean(Averages[1, (n-((2*j)-1)):(n-j)])-mean(Averages[1, (n-(j)+1):n]))/2)
+  }
+}
+
+
+#Data Prep For Neural Network (Kirsch Operators)
+k<-3
+Differences5X5x <- Differences
+a<- matrix(c(0),5,5)
+
+horizx<- t(as.matrix(c(9,9,9,9,9,9,5,5,5,9,-7,-3,0,-3,-7,-7,-3,-3,-3,-7,-7,-7,-7,-7,-7)))
+
+
+for(i in 3:68){
+    for (r in 1:5){
+        a[r,] <-c(Differences[r,(i-2):(i+2)]) 
+            Z<-c(a[k-2,],a[k-1,],a[k,],a[k+1,],a[k+2,])
+                Differences5X5x[3,i] <- horizx %*% Z
+  }
+}
+
+Differences5X5y <- Differences
+a<- matrix(c(0),5,5)
+
+horizy<- t(as.matrix(c(-7,-7,-7,9,9,-7,-3,-3,5,9,-7,-3,0,5,9,-7,-3,-3,5,9,-7,-7,-7,9,9)))
+
+for(i in 3:68){
+    for (r in 1:5){
+        a[r,] <-c(Differences[r,(i-2):(i+2)]) 
+            Z<-c(a[k-2,],a[k-1,],a[k,],a[k+1,],a[k+2,])
+                Differences5X5y[3,i] <- horizy %*% Z
+  }
+}
+
+Gradient5X5[z,] <- sqrt((Differences5X5x[3,])^2+(Differences5X5y[3,])^2)
+}
+
+#Neural Network Construction
+x<- Gradient5X5
+y <- matrix(c(0),330,70)
+
+for(q in 1:330){
+  j <- SD_Change[q,2]
+  y[q,j] <- 1
+}
+
+NE <- nnet(x[1:200,], y[1:200,], size = 30, wts=W,
+     linout = FALSE, entropy = FALSE, softmax = FALSE,
+     censored = FALSE, skip = FALSE, rang = 0.7, decay = .001,
+     maxit = 6000, Hess = FALSE, trace = TRUE, MaxNWts = 6000,
+     abstol = 1.0e-4, reltol = 1.0e-8)
+
+W <- NE$wts
+
+print(W)
+
+NEPredict <- predict(NE, Gradient5X5[201:330,], type = "raw")
+
+```
